@@ -58,7 +58,7 @@ public class BestReviewsWordsCount {
 		JavaRDD<Tuple2<String,String>> reviewsScoreText = bestReviews.map(
 				line -> new Tuple2<String,String> (
 							line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[1],
-							line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[9]
+							line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[9].toLowerCase()
 						)
 		);
 	
