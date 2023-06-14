@@ -47,7 +47,7 @@ public class BestReviewsWordsCount {
 		 * Filtramos las mejores reseñas con titulo no nulo
 		 */
 		JavaRDD<String> bestReviews = inputRDD.filter(
-				line -> !line.split(",")[1].equals("") && Double.parseDouble(line.split(",")[6])>3
+				line -> !line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[1].equals("") && Double.parseDouble(line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[6])>3
 		);
 		
 		/*
@@ -57,8 +57,8 @@ public class BestReviewsWordsCount {
 
 		JavaRDD<Tuple2<String,String>> reviewsScoreText = bestReviews.map(
 				line -> new Tuple2<String,String> (
-							line.split(",")[1],
-							line.split(",")[9]
+							line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[1],
+							line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1)[9]
 						)
 		);
 	
