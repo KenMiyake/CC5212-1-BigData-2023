@@ -64,8 +64,8 @@ public class BestReviewsWordsCount {
 	
 		/*
 		 * Then we count each word in the text*/
-		
-		JavaRDD<String> wordRDD = reviewsScoreText.flatMap(tup -> Arrays.<String>asList(tup._2.split(" ")).iterator());
+		//el "\\W+" es para obtener solo las palabras
+		JavaRDD<String> wordRDD = reviewsScoreText.flatMap(tup -> Arrays.<String>asList(tup._2.split("\\W+")).iterator());
 		
 		JavaPairRDD<String,Integer> wordOneRDD = wordRDD.mapToPair(word -> new Tuple2<String,Integer>(word, 1));
 		JavaPairRDD<String,Integer> wordCount = wordOneRDD.reduceByKey((a, b) -> a + b);
