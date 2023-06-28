@@ -59,7 +59,7 @@ public class BestReviewsWordsCount {
 		List<String> stopwordsList = Arrays.asList(stopwords);
 		
 		JavaRDD<String> bestReviews = inputRDD.filter(
-				line -> !line.split(reSplitData, -1)[1].equals("") && Double.parseDouble(line.split(reSplitData, -1)[6])>3
+				line -> line.split(reSplitData, -1).length != 1 && !line.split(reSplitData, -1)[6].equals("review/score") && !line.split(reSplitData, -1)[1].equals("") && Double.parseDouble(line.split(reSplitData, -1)[6])>3
 		);
 		
 		/*

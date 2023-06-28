@@ -1,5 +1,7 @@
 package org.mdp.spark.cli;
 
+import java.util.Arrays;
+
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -7,7 +9,7 @@ import org.apache.spark.api.java.JavaSparkContext;
 
 import scala.Tuple2;
 
-public class CategoriesRanking {
+public class AuthorsRanking {
 
 	
 	
@@ -20,7 +22,7 @@ public class CategoriesRanking {
 			System.err.println("Usage arguments: inputPath outputPath");
 			System.exit(0);
 		}
-		new CategoriesRanking().run(args[0],args[1], args[2]);
+		new AuthorsRanking().run(args[0],args[1], args[2]);
 	}
 
 	/**
@@ -32,7 +34,7 @@ public class CategoriesRanking {
 		 *   and the (default) master settings.
 		 */
 		SparkConf conf = new SparkConf()
-				.setAppName(CategoriesRanking.class.getName());
+				.setAppName(AuthorsRanking.class.getName());
 		JavaSparkContext context = new JavaSparkContext(conf);
 
 		/*
@@ -41,26 +43,46 @@ public class CategoriesRanking {
 		JavaRDD<String> inputBooksDataRDD = context.textFile(inputFilePath1);
 		JavaRDD<String> inputReviewBooksRDD = context.textFile(inputFilePath2);
 		
-		/*
-		 * Here we filter lines that are not TV series or where no episode name is given
-		 */
-		
+
 		
 		String reSplitData= ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)";
 		
-		//first we get all the book of which categories are not null 
-		JavaRDD<String> ReviewsNoNullCategories = inputBooksDataRDD.filter(
-				line -> line.split(reSplitData, -1).length != 1  && !line.split(reSplitData, -1)[8].equals("") 
+		//first we get all the book of which authors are not null 
+		JavaRDD<String> ReviewsNoNullAuthors = inputBooksDataRDD.filter(
+				line -> line.split(reSplitData, -1).length != 1  && !line.split(reSplitData, -1)[2].equals("") 
 		);
 		
 		
-		//Here we create the tuple (title, categories) from books data
-		
-		JavaPairRDD<String,String> bookCategories= ReviewsNoNullCategories.mapToPair(
+		//Here we create the tuple (title, authors) from books data
+		//With the following R.E. we clean the authors column
+		String reCleanAuthors= "\\[|'|\\]"; //originally we did use this
+		//but think that is better to clean just the [] symbols
+		//then slit by reSplitData
+
+		//if there is time i'll try that
+
+
+		JavaPairRDD<String,String> bookAuthors= ReviewsNoNullAuthors.mapToPair(
 				line -> new Tuple2<String,String>(
 						line.split(reSplitData,-1)[0],
-						line.split(reSplitData,-1)[8])
+						line.split(reSplitData,-1)[2].replaceAll(reCleanAuthors, ""))
 				);
+		
+		//Now we want to create a row for each author, this is usefull for books that have multiple authors
+		JavaRDD<String> mappedAuthors = bookAuthors.flatMap(
+				tup -> {
+					String [] autores= tup._2.split(",");
+					for(int i=0;i<autores.length;i++) {
+						autores[i]=tup._1+"#"+autores[i];}
+					return Arrays.<String>asList(autores).iterator();
+					}
+				);
+		
+		
+		JavaRDD<String> mappedAuthorsFiltered= mappedAuthors.filter(line-> line.split("#").length !=1);
+		//Here we have the pair (title, author)
+		JavaPairRDD<String,String> titleAuthorRDD = mappedAuthorsFiltered.mapToPair(line -> new Tuple2<String,String>(line.split("#")[0], line.split("#")[1]));
+		
 		//then we get all the reviews with its title field not null
 		JavaRDD<String> ReviewsNoNulls = inputReviewBooksRDD.filter(
 				line -> line.split(reSplitData, -1).length != 1 && !line.split(reSplitData, -1)[1].equals("") && !line.split(reSplitData, -1)[6].equals("review/score")
@@ -91,22 +113,24 @@ public class CategoriesRanking {
 				tup -> new Tuple2<String,Tuple2<Integer,Double>> (tup._1, new Tuple2<Integer, Double>(tup._2._2,tup._2._1/tup._2._2))
 		);
 		
-		JavaPairRDD<String,Tuple2<Tuple2<Integer, Double>,String>> countCategoriesJoined = reviewsToCountAndAvgRating.join(bookCategories);
+		//Here we join by title, so we have the tuple (title, ((count, avgScore), author))
 		
-		//Now, we need to count by categories, in this case we will map to two maps, by count the total of reviews per category and the average rating per category
+		JavaPairRDD<String,Tuple2<Tuple2<Integer, Double>,String>> countAuthorsJoined = reviewsToCountAndAvgRating.join(titleAuthorRDD);
 		
-		JavaPairRDD<String,Integer> categoriesCount= countCategoriesJoined.mapToPair(
+		//Now, we need to count by author, in this case we will map to two maps, by count the total of reviews per author and the average rating per author
+		
+		JavaPairRDD<String,Integer> AuthorsCount= countAuthorsJoined.mapToPair(
 				tup -> new Tuple2<String, Integer>(tup._2._2,tup._2._1._1));
 		
-		JavaPairRDD<String,Double> categoriesScore = countCategoriesJoined.mapToPair(
+		JavaPairRDD<String,Double> AuthorsScore = countAuthorsJoined.mapToPair(
 				tup -> new Tuple2<String,Double>(tup._2._2, tup._2._1._2));
 		
 		
-		//Sum all the reviews per category
-		JavaPairRDD<String,Integer> categoriesReviewCount = categoriesCount.reduceByKey((a, b) -> a + b);
+		//Sum all the reviews per author
+		JavaPairRDD<String,Integer> authorsReviewCount = AuthorsCount.reduceByKey((a, b) -> a + b);
 		
-		JavaPairRDD<String, Tuple2<Double, Integer>> categoriesToSumCountRating = 
-				categoriesScore.aggregateByKey(
+		JavaPairRDD<String, Tuple2<Double, Integer>> authorsToSumCountRating = 
+				AuthorsScore.aggregateByKey(
 						new Tuple2<Double, Integer>(0d, 0), // base value
 						(sumCount, rating) -> 
 							new Tuple2<Double, Integer>(sumCount._1 + rating, sumCount._2 + 1 ), // combine function
@@ -115,22 +139,22 @@ public class CategoriesRanking {
 		
 		
 		
-		JavaPairRDD<String,Double> categoriesToAvgRating = categoriesToSumCountRating.mapToPair(
+		JavaPairRDD<String,Double> authorsToAvgRating = authorsToSumCountRating.mapToPair(
 				tup -> new Tuple2<String,Double>(tup._1,tup._2._1/tup._2._2)
 		);		
 		
 		
 		//we are almost done, we join the previous results
 		
-		JavaPairRDD<String,Tuple2<Double,Integer>> countAvgCategoriesJoined = categoriesToAvgRating.join(categoriesReviewCount);
+		JavaPairRDD<String,Tuple2<Double,Integer>> countAvgAuthorsJoined = authorsToAvgRating.join(authorsReviewCount);
 		
-		JavaPairRDD<Integer, Tuple2<String,Double>> countKeyForCategories=  countAvgCategoriesJoined.mapToPair(
+		JavaPairRDD<Integer, Tuple2<String,Double>> countKeyForAuthors=  countAvgAuthorsJoined.mapToPair(
 				tup -> new Tuple2<Integer, Tuple2<String,Double>>(tup._2._2, new Tuple2<String,Double>(tup._1,tup._2._1)));
 		
 		
-		//Finally, we sort the results by number of reviews per category
+		//Finally, we sort the results by number of reviews per author
 		
-		JavaPairRDD<Integer, Tuple2<String,Double>> countOrderedCategories = countKeyForCategories.sortByKey(false);
+		JavaPairRDD<Integer, Tuple2<String,Double>> countOrderedAuthors = countKeyForAuthors.sortByKey(false);
 		
 		
 		
@@ -141,7 +165,7 @@ public class CategoriesRanking {
 		/*
 		 * Write the output to local FS or HDFS
 		 */
-		countOrderedCategories.saveAsTextFile(outputFilePath);
+		countOrderedAuthors.saveAsTextFile(outputFilePath);
 		
 		context.close();
 	}	
